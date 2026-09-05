@@ -20,3 +20,56 @@ Instead of claiming novelty in graph-based or temporal modeling, this system del
 ## 🏗️ Architecture & Pipeline
 
 The end-to-end detection, scoring, and intervention path processes historical logs up to the exact observation time ($\le \text{observation\_time}$) to eliminate future data leakage.
+
+```text
+[ Transactions & Account Logs ] (Causal Filter: t ≤ observation_time)
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Entity-Link Graph Construction                           │
+│    Shared Device / IP Subnet (/24) / Card BIN                │
+│    └──> Precomputed Jaccard-style Distance Matrix           │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. DBSCAN Clustering (`metric='precomputed'`)               │
+│    └──> Extracts Dense Account Clusters (Candidate Rings)   │
+│    └──> Unlinked Users Categorized as Noise                 │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Temporal Feature Extraction                              │
+│    • Accounts created within 24h   • Device reuse           │
+│    • IP subnet overlap             • Amount similarity      │
+│    • Beneficiary concentration (6h)• Activity burst (6h)   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 4. Two-Stage Explainable Scorer                             │
+│    • STRUCTURAL Score (Persistent): "Is this a ring?"       │
+│    • ESCALATION Signal (6h Window): "Is cash-out imminent?" │
+│                                                             │
+│    [HIGH]   = Structural Ring + Fresh Escalation            │
+│               └──> "Predicted cash-out within 6h"           │
+│    [MEDIUM] = Structural Ring + No Escalation               │
+│               └──> "Step-up verification required"          │
+│    [LOW]    = Low Structural Confidence                     │
+│               └──> "Passive monitoring"                     │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 5. Bounded Defense-Only Intervention                        │
+│    [HIGH]   ──> Hold ONLY transfers to target beneficiary   │
+│    [MEDIUM] ──> Enforce step-up verification on next transfer│
+│    [LOW]    ──> Maintain passive logging                    │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 6. Append-Only Audit Trail                                  │
+│    └──> JSONL log documenting scores, features & actions    │
+└──────────────────────────────┴──────────────────────────────┘
