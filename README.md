@@ -13,7 +13,39 @@ Given a group of accounts that look structurally like a fraud ring, is there a r
 It is explicitly not a claim that graph-based fraud detection or temporal risk scoring are novel techniques — they aren't, and the buildathon brief says as much. The contribution here is narrower and testable: one specific predicted action (coordinated cash-out), one specific prediction window (6h), an explanation attached to every prediction, and an intervention that is bounded to hold only the transfers actually heading toward the suspected beneficiary — never a blanket account freeze.
 
 How it works
-The detection and intervention pipeline processes transactions through six main stages:Data Ingestion & Filtering: All transactions and account activities are strictly filtered to include only data occurring at or before the current observation time ($\le \text{observation\_time}$), preventing future data leakage.1. Entity-Link Graph Construction: Maps connections between active accounts by linking shared devices, IP /24 subnets, or card BINs, converting these links into a precomputed Jaccard-style distance matrix.2. DBSCAN Clustering: Clusters the graph using metric='precomputed' to isolate candidate rings (dense, tightly connected account clusters), while classifying unlinked, ordinary customers as noise.3. Temporal Feature Extraction: Computes behavioural risk metrics for each candidate ring, including:accounts_created_within_24hdevice_reuseip_overlapamount_similaritybeneficiary_concentration (recent window)activity_burst (recent window)4. Two-Stage Explainable Scorer: Evaluates the extracted features through a persistent Structural Score ("is this a ring at all?") and a recent-window Escalation Signal ("is something happening right now?"):HIGH: High structural score AND fresh escalation signal $\rightarrow$ Predicted cash-out within 6 hours.MEDIUM: High structural score without fresh escalation $\rightarrow$ Flagged for step-up verification.LOW: Neither condition met $\rightarrow$ Passive monitoring.5. Bounded Intervention: Applies proportional risk controls without blanket account freezes:HIGH: Holds only the specific transfers routed toward the concentrated beneficiary.MEDIUM: Enforces step-up verification on the group's next outgoing transfer.LOW: Continues passive logging and monitoring.6. Full Audit Trail: Appends every assessment, severity level, feature value, and intervention action into an append-only JSONL log (audit_log.jsonl).Data Integrity Guarantee: Ground truth data (the actual cash_out_time for each ring) is strictly segregated and used solely post-hoc by evaluate.py to calculate precision, recall, and lead-time metrics. The live detection engine never accesses future states.
+transactions/accounts (causal, ≤ observation_time)
+        │
+        ▼
+1. Entity-link graph over active accounts
+   (shared device / IP-/24 / card BIN → precomputed Jaccard-style distance)
+        │
+        ▼
+2. DBSCAN clustering (metric='precomputed')
+   → candidate rings (dense, connected groups; noise = ordinary customers)
+        │
+        ▼
+3. Temporal feature extraction per candidate ring
+   accounts_created_within_24h · device_reuse · ip_overlap ·
+   amount_similarity · beneficiary_concentration (recent) · activity_burst (recent)
+        │
+        ▼
+4. Two-stage explainable scorer
+   STRUCTURAL score  = "is this a ring at all" (persistent)
+   ESCALATION signal = "is something happening right now" (recent-window only)
+   HIGH  = structural ring AND fresh escalation  → "predicted cash-out within 6h"
+   MEDIUM = structural ring, no fresh escalation → "step-up verification"
+   LOW    = neither                              → monitor
+        │
+        ▼
+5. Bounded intervention (never freezes an account)
+   HIGH   → hold only the transfers heading to the concentrated beneficiary
+   MEDIUM → require step-up verification on the group's next transfer
+   LOW    → passive monitoring only
+        │
+        ▼
+6. Full audit trail (every decision, every cycle, JSONL, append-only)
+Everything upstream of step 6 only ever sees data with timestamp <= observation_time — there is no lookahead into the future anywhere in the detection path. Ground truth (the real cash_out_time for each ring) is used only by evaluate.py, after the fact, to score predictions. The detector never sees it.
+
 Why the design looks like this (bugs found and fixed during testing)
 This section is here on purpose — the brief explicitly rewards honest engineering over a clean-looking demo, and these were real failures caught by running the evaluation, not hypothetical caveats.
 
