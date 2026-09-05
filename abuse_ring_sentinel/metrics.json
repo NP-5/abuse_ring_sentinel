@@ -1,0 +1,22 @@
+{
+  "rings_total": 12,
+  "ring_detection_precision": 0.839,
+  "ring_detection_recall": 0.833,
+  "next_action_prediction_precision": 0.233,
+  "next_action_prediction_recall": 0.833,
+  "avg_detection_lead_time_hours": 4.1,
+  "false_positive_rate": 0.161,
+  "legitimate_customers_affected": 15,
+  "rings_correctly_predicted_before_cashout": [
+    "RING-00",
+    "RING-01",
+    "RING-03",
+    "RING-04",
+    "RING-05",
+    "RING-06",
+    "RING-07",
+    "RING-09",
+    "RING-10",
+    "RING-11"
+  ]
+}
